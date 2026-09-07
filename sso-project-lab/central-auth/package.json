@@ -1,0 +1,15 @@
+{
+  "name": "central-auth-service",
+  "version": "1.0.0",
+  "description": "Central Authentication Service (CAS / SSO API) with RADIUS & JWT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "radius": "^1.1.4"
+  }
+}
