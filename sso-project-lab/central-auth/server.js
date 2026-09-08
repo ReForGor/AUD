@@ -3,12 +3,43 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const dgram = require('dgram');
 const radius = require('radius');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const RADIUS_HOST = process.env.RADIUS_HOST || 'freeradius';
 const RADIUS_SECRET = process.env.RADIUS_SECRET || 'testing123';
 const JWT_SECRET = process.env.JWT_SECRET || 'kmitl_chumphon_sso_secret_key';
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://sso_user:sso_password@postgres:5432/sso_db';
+
+// PostgreSQL Connection Pool
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  connectionTimeoutMillis: 5000,
+});
+
+pool.query('SELECT NOW()', (err) => {
+  if (err) {
+    console.warn('[Central Auth] PostgreSQL connection warning:', err.message);
+  } else {
+    console.log('[Central Auth] Connected to PostgreSQL (sso_db) successfully');
+  }
+});
+
+/**
+ * บันทึก Audit Log การเข้าสู่ระบบลงฐานข้อมูล PostgreSQL
+ */
+async function logAuditEvent(username, status, ip, userAgent, failureReason = null) {
+  try {
+    await pool.query(
+      `INSERT INTO login_audit_logs (username, status, ip_address, user_agent, failure_reason)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [username, status, ip || '127.0.0.1', userAgent || 'Unknown', failureReason]
+    );
+  } catch (err) {
+    console.error('[Central Auth] Error saving audit log to PostgreSQL:', err.message);
+  }
+}
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -215,9 +246,11 @@ function renderLoginPage({ error = null, successMsg = null, redirectUrl = '/lab/
     }
 
     .alert-danger {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.22);
+      border: 1px solid #ef4444;
       color: #fca5a5;
+      font-weight: 500;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
     }
 
     .alert-success {
@@ -364,6 +397,7 @@ function renderLoginPage({ error = null, successMsg = null, redirectUrl = '/lab/
 
       <div class="system-status">
         <span><span class="status-dot"></span>RADIUS: ${RADIUS_HOST}:1812 (UDP)</span>
+        <span><span class="status-dot" style="background:#38bdf8;box-shadow:0 0 8px #38bdf8;"></span>PostgreSQL: 5432 (Audit Logs)</span>
         <span>Token: JWT (Stateless)</span>
       </div>
     </div>
@@ -376,25 +410,35 @@ function renderLoginPage({ error = null, successMsg = null, redirectUrl = '/lab/
 // Routes
 // -------------------------------------------------------------
 
-// เข้าหน้าแรก หรือ /login
-app.get(['/', '/login'], (req, res) => {
+// เข้าหน้าแรก หรือ /login (รองรับทั้ง /login และ /auth/login)
+app.get(['/', '/login', '/auth', '/auth/login'], (req, res) => {
   const redirectUrl = req.query.redirect_url || '/lab/';
   const loggedOut = req.query.logged_out === '1';
+  const errorCode = req.query.error;
 
-  // ตรวจสอบว่าผู้ใช้มี Token อยู่แล้วหรือไม่
+  // ตรวจสอบว่าผู้ใช้มี Token อยู่แล้วหรือไม่ (ยกเว้นกรณีมีแจ้งเตือน error หรือกด logout)
   const existingUser = checkExistingAuth(req);
-  if (existingUser && !loggedOut) {
+  if (existingUser && !loggedOut && !errorCode) {
     return res.redirect(redirectUrl);
   }
 
+  let errorMsg = null;
+  if (errorCode === 'not_logged_in' || errorCode === 'unauthorized') {
+    errorMsg = 'กรุณาเข้าสู่ระบบก่อนเข้าใช้งาน (คุณยังไม่ได้ล็อกอิน)';
+  } else if (errorCode) {
+    errorMsg = decodeURIComponent(errorCode);
+  }
+
   const successMsg = loggedOut ? 'ออกจากระบบเรียบร้อยแล้ว' : null;
-  res.send(renderLoginPage({ redirectUrl, successMsg }));
+  res.send(renderLoginPage({ error: errorMsg, redirectUrl, successMsg }));
 });
 
 // ตรวจสอบ Username/Password กับ FreeRADIUS และออก JWT
-app.post('/login', async (req, res) => {
+app.post(['/login', '/auth/login'], async (req, res) => {
   const { username, password } = req.body;
   const redirectUrl = req.body.redirect_url || '/lab/';
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'] || '';
 
   if (!username || !password) {
     return res.status(400).send(renderLoginPage({
@@ -409,6 +453,9 @@ app.post('/login', async (req, res) => {
     const radiusResult = await authenticateRadius(username.trim(), password);
 
     if (radiusResult.success) {
+      // บันทึก Audit Log ลง PostgreSQL ว่า Login สำเร็จ
+      await logAuditEvent(username.trim(), 'SUCCESS', clientIp, userAgent);
+
       // 2. ออก JWT Token (ตามขั้นตอนที่ 1 ในเอกสาร)
       const payload = {
         sub: username.trim(),
@@ -434,6 +481,9 @@ app.post('/login', async (req, res) => {
       console.log(`[Central Auth] Authentication successful for: ${username}`);
       return res.redirect(redirectUrl);
     } else {
+      // บันทึก Audit Log ลง PostgreSQL ว่า Login ไม่ผ่าน
+      await logAuditEvent(username.trim(), 'REJECTED', clientIp, userAgent, 'Invalid credentials');
+
       console.warn(`[Central Auth] Authentication rejected for: ${username}`);
       return res.status(401).send(renderLoginPage({
         error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (Access-Reject จาก RADIUS)',
@@ -442,6 +492,9 @@ app.post('/login', async (req, res) => {
       }));
     }
   } catch (err) {
+    // บันทึก Audit Log ลง PostgreSQL ว่าเกิด Error
+    await logAuditEvent(username.trim(), 'ERROR', clientIp, userAgent, err.message);
+
     console.error(`[Central Auth] RADIUS Error: ${err.message}`);
     return res.status(500).send(renderLoginPage({
       error: `ไม่สามารถเชื่อมต่อ RADIUS Server ได้: ${err.message}`,
@@ -452,10 +505,13 @@ app.post('/login', async (req, res) => {
 });
 
 // ออกจากระบบ (ลบคุกกี้ SSO)
-app.get('/logout', (req, res) => {
+app.get(['/logout', '/auth/logout'], (req, res) => {
   res.clearCookie('sso_token', { path: '/' });
   const redirectUrl = req.query.redirect_url || '/lab/';
-  res.redirect(`/auth/login?logged_out=1&redirect_url=${encodeURIComponent(redirectUrl)}`);
+  const host = req.headers.host || '';
+  const isDirectPort = host.includes(':3000');
+  const loginPath = isDirectPort ? '/login' : '/auth/login';
+  res.redirect(`${loginPath}?logged_out=1&redirect_url=${encodeURIComponent(redirectUrl)}`);
 });
 
 // API สำหรับตรวจสอบ Token (สำหรับ Application อื่นที่ต้องการ Query ผ่าน API)
@@ -473,12 +529,37 @@ app.get('/api/verify', (req, res) => {
   }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'central-auth', time: new Date() });
+// API สำหรับดึงประวัติการเข้าสู่ระบบ (Audit Logs) จาก PostgreSQL
+app.get('/api/audit-logs', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, username, status, ip_address, failure_reason, created_at FROM login_audit_logs ORDER BY created_at DESC LIMIT 50'
+    );
+    res.json({ success: true, count: result.rows.length, logs: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Health check endpoint (พร้อมตรวจสอบสถานะ PostgreSQL)
+app.get('/health', async (req, res) => {
+  let dbStatus = 'disconnected';
+  try {
+    const dbRes = await pool.query('SELECT NOW()');
+    if (dbRes.rows.length) dbStatus = 'connected';
+  } catch (err) {
+    dbStatus = 'error: ' + err.message;
+  }
+  res.json({
+    status: 'healthy',
+    service: 'central-auth',
+    database: dbStatus,
+    time: new Date()
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Central Auth] Service is running on port ${PORT}`);
   console.log(`[Central Auth] RADIUS Host: ${RADIUS_HOST}:1812`);
+  console.log(`[Central Auth] PostgreSQL DB: ${DATABASE_URL}`);
 });

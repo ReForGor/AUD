@@ -1,0 +1,9 @@
+# FreeRADIUS User Authorization File
+student66000001 Cleartext-Password := "password1234"
+	Reply-Message := "Hello student66000001"
+
+student66000002 Cleartext-Password := "password1234"
+	Reply-Message := "Hello student66000002"
+
+admin Cleartext-Password := "adminpass"
+	Reply-Message := "Hello Administrator"

@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>สไลด์นำเสนอ: ระบบ Single Sign-On (SSO) ด้วย FreeRADIUS และ Central Auth</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #f97316;
+      --primary-gradient: linear-gradient(135deg, #f97316, #fb923c);
+      --blue-gradient: linear-gradient(135deg, #2563eb, #38bdf8);
+      --bg-main: #090d16;
+      --card-bg: rgba(26, 34, 52, 0.85);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --accent-cyan: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Presentation Deck */
+    .deck-container {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      width: 95%;
+      max-width: 1200px;
+      height: 82vh;
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: clamp(20px, 4vw, 48px);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(50px) scale(0.97);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0) scale(1);
+      z-index: 10;
+    }
+
+    /* Header */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: rgba(249, 115, 22, 0.15);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: #fb923c;
+    }
+
+    .tag.blue {
+      background: rgba(37, 99, 235, 0.15);
+      border-color: rgba(37, 99, 235, 0.3);
+      color: #60a5fa;
+    }
+
+    .tag.green {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+
+    .slide-num {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    h1.slide-title {
+      font-size: clamp(20px, 3vw, 32px);
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.3;
+    }
+
+    p.slide-desc {
+      font-size: clamp(13px, 1.6vw, 16px);
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Content Layouts */
+    .content-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 860px) {
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+      .slide {
+        height: 84vh;
+        padding: 20px 16px;
+      }
+      .deck-container {
+        padding: 10px;
+      }
+    }
+
+    .card-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: clamp(14px, 2vw, 22px);
+      transition: all 0.2s;
+    }
+
+    .card-box:hover {
+      border-color: rgba(249, 115, 22, 0.4);
+    }
+
+    .card-icon {
+      font-size: 28px;
+      margin-bottom: 10px;
+      display: inline-block;
+    }
+
+    .card-title {
+      font-size: clamp(15px, 1.8vw, 18px);
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .card-text {
+      font-size: clamp(12px, 1.4vw, 14px);
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    /* Flow Step Boxes */
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary-gradient);
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-text h4 {
+      font-size: clamp(13px, 1.6vw, 15px);
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .step-text p {
+      font-size: clamp(11px, 1.3vw, 13px);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    pre.code-block {
+      background: #020617;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 14px;
+      font-family: 'Fira Code', monospace;
+      font-size: clamp(11px, 1.2vw, 13px);
+      color: #38bdf8;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+
+    /* Title Slide */
+    .title-slide {
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .title-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 30px;
+      background: rgba(249, 115, 22, 0.2);
+      border: 1px solid rgba(249, 115, 22, 0.4);
+      color: #fb923c;
+      font-weight: 600;
+      font-size: clamp(12px, 1.4vw, 14px);
+      margin-bottom: 20px;
+    }
+
+    .hero-heading {
+      font-size: clamp(26px, 4.5vw, 46px);
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 40%, #fdba74 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 14px;
+      line-height: 1.25;
+    }
+
+    .hero-sub {
+      font-size: clamp(13px, 1.8vw, 18px);
+      color: #94a3b8;
+      max-width: 800px;
+      margin: 0 auto 28px auto;
+      line-height: 1.6;
+    }
+
+    .meta-pills {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    /* Controls Bottom Bar */
+    .controls-bar {
+      height: 64px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 clamp(10px, 3vw, 30px);
+      z-index: 100;
+      gap: 10px;
+    }
+
+    .nav-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: clamp(12px, 1.4vw, 14px);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-nav:hover {
+      background: rgba(249, 115, 22, 0.2);
+      border-color: #f97316;
+      color: #fb923c;
+    }
+
+    .btn-nav:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .dots-indicator {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .dot.active {
+      background: #f97316;
+      width: 20px;
+      border-radius: 8px;
+    }
+
+    .utility-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Modal for Device Sharing & QR Code */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-card {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      position: relative;
+    }
+
+    .modal-card h3 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    .modal-card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .url-box {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: monospace;
+      color: #38bdf8;
+      font-size: 14px;
+      word-break: break-all;
+      margin-bottom: 16px;
+    }
+
+    .qr-canvas-wrapper {
+      background: white;
+      padding: 12px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+
+    .btn-close-modal {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    /* Print Stylesheet for Saving to PDF */
+    @media print {
+      body {
+        overflow: visible;
+        height: auto;
+        background: white !important;
+        color: black !important;
+      }
+      .controls-bar, .modal-overlay {
+        display: none !important;
+      }
+      .deck-container {
+        padding: 0 !important;
+        display: block !important;
+      }
+      .slide {
+        position: relative !important;
+        opacity: 1 !important;
+        transform: none !important;
+        width: 100% !important;
+        height: 100vh !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        background: white !important;
+        border: 1px solid #ccc !important;
+        box-shadow: none !important;
+        color: black !important;
+      }
+      .card-box, pre.code-block, .step-item {
+        background: #f8fafc !important;
+        color: black !important;
+        border-color: #ddd !important;
+      }
+      h1, h2, h3, h4, .hero-heading {
+        color: black !important;
+        -webkit-text-fill-color: black !important;
+      }
+      .tag {
+        border-color: #f97316 !important;
+        color: #ea580c !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Slides Container -->
+  <div class="deck-container" id="deckContainer">
+
+    <!-- SLIDE 1: หน้าปก -->
+    <section class="slide active title-slide" data-slide="1">
+      <div class="title-badge">สถาปัตยกรรมระบบสารสนเทศ (System Architecture)</div>
+      <h1 class="hero-heading">Central Authentication Service (CAS)<br>ร่วมกับ FreeRADIUS บน Docker</h1>
+      <p class="hero-sub">การพัฒนาระบบ Single Sign-On (SSO) สำหรับเว็บแอปพลิเคชันมหาวิทยาลัย ด้วยแนวคิด Stateless Authentication และความปลอดภัยของโปรโตคอล RADIUS</p>
+      
+      <div class="meta-pills">
+        <div class="pill">🏛️ สถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง</div>
+        <div class="pill">🐳 Docker & Docker Compose</div>
+        <div class="pill">🔒 FreeRADIUS + JWT Stateless</div>
+        <div class="pill">⚡ Reverse Proxy (Nginx)</div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: ปัญหาและแนวคิด SSO -->
+    <section class="slide" data-slide="2">
+      <div class="slide-header">
+        <div class="tag">Problem & Motivation</div>
+        <div class="slide-num">02 / 10</div>
+      </div>
+      <h1 class="slide-title">ทำไมมหาวิทยาลัยต้องมีระบบ Single Sign-On (SSO)?</h1>
+      <p class="slide-desc">เปรียบเทียบปัญหาในอดีตกับแนวทางการแก้ปัญหาด้วย Identity Provider (IdP)</p>
+
+      <div class="content-body">
+        <div class="grid-2">
+          <div class="card-box" style="border-color: rgba(239, 68, 68, 0.3);">
+            <div class="card-icon">❌</div>
+            <h3 class="card-title" style="color: #f87171;">ปัญหาเดิม (Traditional Web Apps)</h3>
+            <p class="card-text">
+              • แต่ละระบบ (จองห้อง, ส่งงาน, ทะเบียน) ต้องเชื่อมต่อ RADIUS หรือ Database เองทั้งหมด<br>
+              • นักศึกษาต้องกรอกรหัสผ่านซ้ำทุกครั้งที่เปลี่ยนเว็บแอปพลิเคชัน<br>
+              • ความเสี่ยงด้านความปลอดภัย: รหัสผ่านของนักศึกษาวิ่งผ่านเว็บหลายตัว เสี่ยงโดนขโมย<br>
+              • ภาระฝั่ง Server: เซิร์ฟเวอร์ RADIUS ต้องรับ Request ตรวจรหัสผ่านซ้ำซ้อนมหาศาล
+            </p>
+          </div>
+
+          <div class="card-box" style="border-color: rgba(16, 185, 129, 0.3);">
+            <div class="card-icon">✅</div>
+            <h3 class="card-title" style="color: #6ee7b7;">แนวคิด Central Auth (SSO Architecture)</h3>
+            <p class="card-text">
+              • <strong>Single Source of Truth:</strong> มีแค่ Central Auth เพียงตัวเดียวที่ต่อกับ FreeRADIUS<br>
+              • <strong>Log in Once:</strong> ล็อกอินครั้งเดียวที่หน้ากลาง สามารถเข้าถึงทุกระบบได้ทันที<br>
+              • <strong>Web App ไม่เห็น Password:</strong> แอปปลายทางเห็นเพียง Token ที่ยืนยันตัวตนแล้ว<br>
+              • <strong>แยก AuthN ออกจาก AuthZ:</strong> กลางตรวจคนจริง ปลายทางให้สิทธิ์การใช้งาน
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: สถาปัตยกรรม 5 องค์ประกอบ -->
+    <section class="slide" data-slide="3">
+      <div class="slide-header">
+        <div class="tag blue">Architecture</div>
+        <div class="slide-num">03 / 10</div>
+      </div>
+      <h1 class="slide-title">องค์ประกอบของระบบทั้ง 5 ส่วน (System Components)</h1>
+      <p class="slide-desc">โครงสร้างตามข้อกำหนดของห้องปฏิบัติการ ที่รันอยู่บน Docker Container เครือข่ายเดียวกัน</p>
+
+      <div class="content-body">
+        <div class="grid-3" style="margin-bottom: 14px;">
+          <div class="card-box">
+            <div class="card-icon">🌐</div>
+            <h4 class="card-title">1. Reverse Proxy (Nginx)</h4>
+            <p class="card-text">
+              รับ Request พอร์ต 80 ทำหน้าที่กระจาย Route เส้นทาง:<br>
+              • <code>/auth/</code> ➔ Central Auth (:3000)<br>
+              • <code>/lab/</code> ➔ Web App 1 (:4001)<br>
+              • <code>/equipment/</code> ➔ Web App 2 (:4002)
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">🔑</div>
+            <h4 class="card-title">2. Central Auth Service</h4>
+            <p class="card-text">
+              เว็บกลางใน Node.js (:3000) แสดงหน้า Login, ส่ง Access-Request หา RADIUS ผ่าน UDP พอร์ต 1812 และออก JWT เมื่อสำเร็จ
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">🛡️</div>
+            <h4 class="card-title">3. FreeRADIUS Server</h4>
+            <p class="card-text">
+              เซิร์ฟเวอร์หลักที่เก็บ Username & Password ทำหน้าที่ประมวลผลคำขอ Access-Request และตอบรับ Access-Accept ผ่าน UDP 1812
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card-box">
+            <div class="card-icon">💻</div>
+            <h4 class="card-title">4. Web Apps (2 บริการแยกโฟลเดอร์ & พอร์ต)</h4>
+            <p class="card-text">
+              • <strong>Web App 1 (<code>web-app-1/</code>):</strong> จองห้องแล็บ รันพอร์ต <strong>4001</strong><br>
+              • <strong>Web App 2 (<code>web-app-2/</code>):</strong> ยืมอุปกรณ์ รันพอร์ต <strong>4002</strong><br>
+              ทั้งสองแอปใช้ Stateless JWT Verification โดยไม่ต้องเชื่อมต่อ RADIUS ซ้ำ
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">📱</div>
+            <h4 class="card-title">5. Client (Browser)</h4>
+            <p class="card-text">
+              จัดเก็บ JWT ใน HTTPOnly Cookie ที่แชร์ข้ามทุก Port บนโดเมน <code>localhost</code> อัตโนมัติ ปลอดภัยจากการโจมตีแบบ XSS
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: SSO Workflow -->
+    <section class="slide" data-slide="4">
+      <div class="slide-header">
+        <div class="tag green">Workflow</div>
+        <div class="slide-num">04 / 10</div>
+      </div>
+      <h1 class="slide-title">ลำดับเหตุการณ์เมื่อผู้ใช้เข้าสู่ระบบ (SSO Workflow)</h1>
+      <p class="slide-desc">การประสานงานตั้งแต่เริ่มต้นจนถึงการเข้าใช้งานระบบสำเร็จ</p>
+
+      <div class="content-body">
+        <div class="flow-steps">
+          <div class="step-item">
+            <div class="step-circle">1</div>
+            <div class="step-text">
+              <h4>ผู้ใช้เข้าถึง Web App ปลายทาง (/lab)</h4>
+              <p>Web App ตรวจสอบว่ามี Token หรือไม่? ถ้ายังไม่มี จะทำการ 302 Redirect ส่งผู้ใช้ไปยังหน้า Login กลาง (/auth/login)</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-circle">2</div>
+            <div class="step-text">
+              <h4>กรอกข้อมูลและส่งคำขอตรวจสอบสิทธิ์ (UDP 1812)</h4>
+              <p>ผู้ใช้กรอก Username/Password ที่หน้าเว็บกลาง -> Central Auth แพ็กเกจ Access-Request ส่งหา FreeRADIUS ผ่าน UDP</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-circle">3</div>
+            <div class="step-text">
+              <h4>FreeRADIUS ตรวจสอบและตอบกลับ</h4>
+              <p>เมื่อรหัสผ่านถูกต้อง RADIUS ตอบกลับเป็น Access-Accept -> Central Auth สร้าง JWT พร้อมฝังข้อมูลนักศึกษา</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-circle">4</div>
+            <div class="step-text">
+              <h4>บันทึก HTTPOnly Cookie & Redirect กลับ</h4>
+              <p>เบราว์เซอร์รับ Set-Cookie และถูกส่งกลับมาที่ Web App เริ่มต้น โดยแนบ Cookie ประจำตัวมาด้วยอัตโนมัติ</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-circle">5</div>
+            <div class="step-text">
+              <h4>ตรวจ Signature และอนุญาตเข้าใช้งาน (Stateless)</h4>
+              <p>Web App ถอดรหัสและตรวจ Signature ของ Token ด้วย Secret Key ในเครื่องทันที โดยไม่ต้องถาม RADIUS ซ้ำอีก</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: Token Issuance & UDP Timeout -->
+    <section class="slide" data-slide="5">
+      <div class="slide-header">
+        <div class="tag">Security & Logic</div>
+        <div class="slide-num">05 / 10</div>
+      </div>
+      <h1 class="slide-title">ขั้นตอนที่ 1: การออกบัตรผ่าน & การจัดการ UDP Timeout</h1>
+      <p class="slide-desc">การรับมือกับธรรมชาติแบบไร้สถานะของ UDP ตามข้อควรระวังในเอกสาร</p>
+
+      <div class="content-body">
+        <div class="grid-2">
+          <div>
+            <div class="card-box" style="margin-bottom: 14px;">
+              <h4 class="card-title">⚠️ จุดสำคัญ: UDP Stateless Nature</h4>
+              <p class="card-text">
+                เนื่องจากโปรโตคอล UDP ไม่มีการ Handshake หาก FreeRADIUS ดับหรือเครือข่ายมีปัญหา Node.js จะรอคำตอบตลอดกาล (Hang)<br><br>
+                <strong>วิธีแก้:</strong> โค้ดใน <code>server.js</code> จึงมีการใส่ <strong>Fail-safe Timeout 3 วินาที</strong> หากไม่มีการตอบกลับ จะคืน Error ทันที ไม่ปล่อยให้ระบบค้าง
+              </p>
+            </div>
+            <div class="card-box">
+              <h4 class="card-title">🏷️ JWT Payload Structure</h4>
+              <p class="card-text">
+                ข้อมูลที่ฝังลงใน Token ประกอบด้วย: <code>sub</code>, <code>username</code>, <code>studentId</code>, <code>name</code>, <code>role</code>, <code>campus</code> และระยะเวลาหมดอายุ (24 ชั่วโมง)
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <pre class="code-block">// central-auth/server.js: UDP Timeout Logic
+const timeout = setTimeout(() => {
+  if (!responded) {
+    responded = true;
+    try { client.close(); } catch (e) {}
+    reject(new Error('RADIUS Server timed out (3s)'));
+  }
+}, 3000);
+
+client.on('message', (msg) => {
+  clearTimeout(timeout);
+  const res = radius.decode({ packet: msg, secret });
+  if (res.code === 'Access-Accept') {
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie('sso_token', token, { httpOnly: true, path: '/' });
+    res.redirect(redirectUrl);
+  }
+});</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Token Storage & HTTPOnly Cookie -->
+    <section class="slide" data-slide="6">
+      <div class="slide-header">
+        <div class="tag blue">Token Storage</div>
+        <div class="slide-num">06 / 10</div>
+      </div>
+      <h1 class="slide-title">ขั้นตอนที่ 2: การเก็บรักษาบัตรผ่าน (Cookie Security)</h1>
+      <p class="slide-desc">ทำไมต้องใช้ HTTPOnly Cookie แทนการเก็บใน LocalStorage หรือ Session ทั่วไป?</p>
+
+      <div class="content-body">
+        <div class="grid-3">
+          <div class="card-box">
+            <div class="card-icon">🛡️</div>
+            <h3 class="card-title">1. ป้องกัน XSS Attack</h3>
+            <p class="card-text">
+              การกำหนด Flag <code>HttpOnly: true</code> ทำให้ JavaScript ฝั่งหน้าบ้าน (Client) ไม่สามารถอ่านค่า Token ได้ จึงป้องกันการถูกสคริปต์อันตรายขโมย Token ออกไป
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">🔄</div>
+            <h3 class="card-title">2. Domain & Path Sharing</h3>
+            <p class="card-text">
+              การตั้งค่า <code>Path: '/'</code> ทำให้ทุก Path และทุก Service ย่อย (เช่น <code>/lab/</code>, <code>/equipment</code>) ได้รับคุกกี้ตัวนี้ติดไปด้วยโดยอัตโนมัติ
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">⚡</div>
+            <h3 class="card-title">3. ไร้ภาระฝั่ง Server</h3>
+            <p class="card-text">
+              เซิร์ฟเวอร์ไม่ต้องเปิด Memory จำ Session ของผู้ใช้แต่ละคน (Stateless) ทำให้รองรับจำนวนนักศึกษาได้พร้อมกันหลักหมื่นคน
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Token Verification -->
+    <section class="slide" data-slide="7">
+      <div class="slide-header">
+        <div class="tag green">Verification</div>
+        <div class="slide-num">07 / 10</div>
+      </div>
+      <h1 class="slide-title">ขั้นตอนที่ 3: การตรวจสอบบัตรผ่านที่แอปปลายทาง</h1>
+      <p class="slide-desc">หัวใจสำคัญที่ทำให้นักศึกษาพัฒนา Web Application แยกส่วนกันได้อย่างอิสระ</p>
+
+      <div class="content-body">
+        <div class="grid-2">
+          <div>
+            <pre class="code-block">// web-app-1/app.js: Middleware ตรวจสอบ
+function ssoAuthMiddleware(req, res, next) {
+  const token = req.cookies.sso_token;
+  const currentPath = req.baseUrl + req.path;
+
+  // 1. ถ้าไม่มี Token ให้บังคับ Redirect ไปล็อกอิน
+  if (!token) {
+    return res.redirect(
+      `/auth/login?redirect_url=${encodeURIComponent(currentPath)}`
+    );
+  }
+
+  // 2. แกะและตรวจ Signature ด้วย Shared Secret
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded; // ยืนยันตัวตนสำเร็จ!
+    next();
+  } catch (err) {
+    res.clearCookie('sso_token', { path: '/' });
+    return res.redirect('/auth/login');
+  }
+}</pre>
+          </div>
+
+          <div class="flow-steps">
+            <div class="card-box">
+              <h4 class="card-title">🔍 ข้อดีที่ได้รับ</h4>
+              <p class="card-text">
+                • <strong>แอปปลายทางไม่ต้องต่อ RADIUS:</strong> เขียนแค่ Middleware ถอดรหัส JWT สั้นๆ ไม่กี่บรรทัด<br><br>
+                • <strong>ประสิทธิภาพสูงสุด (High Performance):</strong> การ Verify ทำด้วยการคำนวณทางคณิตศาสตร์ในเครื่อง (Cryptographic Verification) รวดเร็วระดับเสี้ยววินาที<br><br>
+                • <strong>แยกความรับผิดชอบ (Decoupling):</strong> ถ้า FreeRADIUS ปิดซ่อมบำรุง ผู้ใช้ที่ล็อกอินอยู่แล้วยังคงใช้งาน Web App ต่อได้จนกว่า Token จะหมดอายุ!
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: Multi-Port Apps Showcase -->
+    <section class="slide" data-slide="8">
+      <div class="slide-header">
+        <div class="tag blue">Web App Showcase</div>
+        <div class="slide-num">08 / 10</div>
+      </div>
+      <h1 class="slide-title">การต่อขยายระบบ: 2 Web Apps แยกโฟลเดอร์ & แยกพอร์ต</h1>
+      <p class="slide-desc">พัฒนา 2 บริการอิสระในโฟลเดอร์ web-app-1 (พอร์ต 4001) และ web-app-2 (พอร์ต 4002) พร้อมแชร์เซสชัน SSO</p>
+
+      <div class="content-body">
+        <div class="grid-2">
+          <div class="card-box">
+            <div class="card-icon">🖥️</div>
+            <h3 class="card-title">Web App 1: ระบบจองห้องแล็บคอมพิวเตอร์</h3>
+            <p class="card-text">
+              • <strong>Folder:</strong> <code>web-app-1/</code> | <strong>Port:</strong> <code>4001</code><br>
+              • <strong>URL:</strong> <code>http://localhost/lab/</code> หรือ <code>http://localhost:4001/</code><br>
+              • แสดงห้องแล็บ AI, CyberSec, Cloud Computing<br>
+              • มีฟอร์มเลือกเวลาและหมายเลขเครื่องเพื่อทำการจอง<br>
+              • มี <strong>JWT Token Inspector</strong> แสดง Payload ที่แกะได้
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">📦</div>
+            <h3 class="card-title">Web App 2: ระบบยืม-คืนอุปกรณ์ห้องแล็บ</h3>
+            <p class="card-text">
+              • <strong>Folder:</strong> <code>web-app-2/</code> | <strong>Port:</strong> <code>4002</code><br>
+              • <strong>URL:</strong> <code>http://localhost/equipment/</code> หรือ <code>http://localhost:4002/</code><br>
+              • รายการอุปกรณ์: บอร์ด Raspberry Pi 4, สาย Console, VR Quest 3<br>
+              • ฟอร์มบันทึกการยืม พร้อมระบุวิชาและวันส่งคืน<br>
+              • <strong>Cross-Port SSO:</strong> สลับระหว่างพอร์ต 4001 และ 4002 ได้ทันทีโดยไม่ต้องล็อกอินซ้ำ!
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: Technical Highlights & BlastRADIUS -->
+    <section class="slide" data-slide="9">
+      <div class="slide-header">
+        <div class="tag">Security Insights</div>
+        <div class="slide-num">09 / 10</div>
+      </div>
+      <h1 class="slide-title">จุดเด่นทางเทคนิค & การรับมือช่องโหว่ BlastRADIUS</h1>
+      <p class="slide-desc">การแก้ปัญหาและปรับจูนความเข้ากันได้ของระบบจริง</p>
+
+      <div class="content-body">
+        <div class="grid-3">
+          <div class="card-box">
+            <div class="card-icon">🛡️</div>
+            <h4 class="card-title">BlastRADIUS (CVE-2024-3596)</h4>
+            <p class="card-text">
+              FreeRADIUS เวอร์ชันใหม่ (ปี 2024) บังคับใช้ความปลอดภัยสูง จึงมีการแจ้งเตือนเมื่อพบแพ็กเกจที่ไม่ส่ง Proxy-State ซึ่งเราได้ทำการตั้งค่ารองรับและทำให้อนุญาตทำงานได้อย่างราบรื่น
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">📁</div>
+            <h4 class="card-title">Linux File Permissions</h4>
+            <p class="card-text">
+              FreeRADIUS มีกฎความปลอดภัยเข้มงวด ห้ามไฟล์คอนฟิกเป็น Globally Writable จึงใช้ Dockerfile ช่วยกำหนดสิทธิ์ <code>chmod 640</code> และ <code>chown root:freerad</code> ให้ปลอดภัย 100%
+            </p>
+          </div>
+
+          <div class="card-box">
+            <div class="card-icon">🚀</div>
+            <h4 class="card-title">Single Command Deploy</h4>
+            <p class="card-text">
+              ทุก Container ทั้ง 4 ตัว (Proxy, Auth, App, RADIUS) เชื่อมต่อกันในวง Network <code>kmitl_sso_net</code> และสามารถสั่งรันได้ในคำสั่งเดียว <code>docker compose up -d</code>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: สรุปผลและการสาธิต -->
+    <section class="slide title-slide" data-slide="10">
+      <div class="title-badge" style="background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+        Conclusion & Demo
+      </div>
+      <h1 class="hero-heading" style="font-size: clamp(24px, 4vw, 38px);">สรุปผลการพัฒนาระบบ & การสาธิต (Demo)</h1>
+      <p class="hero-sub">
+        ระบบ Single Sign-On ผ่าน RADIUS และ Docker ทำงานได้อย่างสมบูรณ์แบบตามโจทย์<br>
+        พร้อมแสดงการทดสอบสดในเบราว์เซอร์
+      </p>
+
+      <div class="meta-pills" style="margin-bottom: 24px;">
+        <div class="pill">1. ทดสอบ Login ผิด ➔ แสดง Reject</div>
+        <div class="pill">2. ทดสอบ Login ถูก (student66000001) ➔ ออก JWT</div>
+        <div class="pill">3. สลับหน้าเว็บจองแล็บ ➔ หน้ายืมอุปกรณ์ (SSO)</div>
+        <div class="pill">4. ทดสอบ Logout ➔ เคลียร์คุกกี้สมบูรณ์</div>
+      </div>
+
+      <div style="font-size: 22px; color: #fb923c; font-weight: 700;">
+        ขอบคุณครับ • มีคำถามเพิ่มเติมหรือไม่ครับ?
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Bottom Navigation Bar -->
+  <footer class="controls-bar">
+    <div class="nav-btns">
+      <button class="btn-nav" id="prevBtn" onclick="prevSlide()">◀ ย้อนกลับ</button>
+      <button class="btn-nav" id="nextBtn" onclick="nextSlide()">ถัดไป ▶</button>
+    </div>
+
+    <div class="dots-indicator" id="dotsContainer"></div>
+
+    <div class="utility-btns">
+      <button class="btn-nav" onclick="openShareModal()" title="เปิดบนอุปกรณ์อื่นผ่าน Wi-Fi / มือถือ">📱 เปิดบนมือถือ</button>
+      <button class="btn-nav" onclick="toggleFullscreen()" title="แสดงเต็มหน้าจอ">⛶ เต็มจอ</button>
+      <button class="btn-nav" onclick="window.print()" title="บันทึกสไลด์เป็น PDF">🖨️ PDF</button>
+    </div>
+  </footer>
+
+  <!-- Share Modal for Mobile / Other Devices -->
+  <div class="modal-overlay" id="shareModal" onclick="closeShareModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <h3>📱 เปิดสไลด์นี้บนอุปกรณ์อื่น</h3>
+      <p>ใช้อุปกรณ์ที่เชื่อมต่อ Wi-Fi หรือเครือข่ายเดียวกัน เปิด URL นี้ในเบราว์เซอร์:</p>
+
+      <div class="url-box" id="shareUrlText">http://localhost/presentation</div>
+
+      <div class="qr-canvas-wrapper">
+        <canvas id="qrCanvas" width="180" height="180"></canvas>
+      </div>
+
+      <div>
+        <button class="btn-close-modal" onclick="closeShareModal()">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 10;
+    const slides = document.querySelectorAll('.slide');
+    const dotsContainer = document.getElementById('dotsContainer');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const deckContainer = document.getElementById('deckContainer');
+
+    // สร้างจุดบอกตำแหน่งสไลด์
+    for (let i = 1; i <= totalSlides; i++) {
+      const dot = document.createElement('div');
+      dot.className = `dot ${i === 1 ? 'active' : ''}`;
+      dot.onclick = () => goToSlide(i);
+      dotsContainer.appendChild(dot);
+    }
+
+    function updateSlides() {
+      slides.forEach((slide, index) => {
+        if (index + 1 === currentSlide) {
+          slide.classList.add('active');
+          slide.scrollTop = 0;
+        } else {
+          slide.classList.remove('active');
+        }
+      });
+
+      const dots = document.querySelectorAll('.dot');
+      dots.forEach((dot, index) => {
+        if (index + 1 === currentSlide) {
+          dot.classList.add('active');
+        } else {
+          dot.classList.remove('active');
+        }
+      });
+
+      prevBtn.disabled = currentSlide === 1;
+      nextBtn.disabled = currentSlide === totalSlides;
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides) {
+        currentSlide++;
+        updateSlides();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 1) {
+        currentSlide--;
+        updateSlides();
+      }
+    }
+
+    function goToSlide(n) {
+      currentSlide = n;
+      updateSlides();
+    }
+
+    // รองรับปุ่มคีย์บอร์ด
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'Space') {
+        nextSlide();
+      } else if (e.key === 'ArrowLeft') {
+        prevSlide();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    // 📱 รองรับ Touch Gesture ปัดซ้าย/ขวา บนมือถือและแท็บเล็ต
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    deckContainer.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    deckContainer.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    }, { passive: true });
+
+    function handleSwipe() {
+      const swipeDistance = touchEndX - touchStartX;
+      if (swipeDistance < -50) {
+        nextSlide(); // ปัดซ้าย ➔ หน้าถัดไป
+      } else if (swipeDistance > 50) {
+        prevSlide(); // ปัดขวา ➔ หน้าย้อนกลับ
+      }
+    }
+
+    // Toggle Fullscreen
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Modal Share & QR Code
+    function openShareModal() {
+      const host = window.location.host || 'localhost';
+      const fullUrl = window.location.protocol + '//' + host + '/presentation';
+      document.getElementById('shareUrlText').innerText = fullUrl;
+      generateQRCode(fullUrl);
+      document.getElementById('shareModal').classList.add('active');
+    }
+
+    function closeShareModal() {
+      document.getElementById('shareModal').classList.remove('active');
+    }
+
+    // วาด QR Code เบื้องต้นด้วย Canvas API
+    function generateQRCode(text) {
+      const canvas = document.getElementById('qrCanvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" + encodeURIComponent(text);
+      img.onload = function() {
+        ctx.clearRect(0, 0, 180, 180);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.onerror = function() {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(0, 0, 180, 180);
+        ctx.fillStyle = "#0f172a";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("สแกน URL:", 90, 80);
+        ctx.font = "11px monospace";
+        ctx.fillText(text.substring(0, 24), 90, 105);
+      };
+    }
+
+    updateSlides();
+  </script>
+</body>
+</html>

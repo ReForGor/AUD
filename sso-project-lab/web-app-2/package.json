@@ -1,7 +1,7 @@
 {
-  "name": "web-app-1-lab-booking",
+  "name": "web-app-2-equipment-loan",
   "version": "1.0.0",
-  "description": "Web Application 1 - Computer Lab Booking System with SSO JWT Verification",
+  "description": "Web Application 2 - Hardware & IoT Equipment Loan System with SSO JWT Verification",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"

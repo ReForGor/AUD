@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 
 const app = express();
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT || 4002;
 const JWT_SECRET = process.env.JWT_SECRET || 'kmitl_chumphon_sso_secret_key';
 const AUTH_URL = process.env.AUTH_URL || 'http://localhost/auth';
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://sso_user:sso_password@postgres:5432/sso_db';
@@ -17,42 +17,45 @@ const pool = new Pool({
 
 pool.query('SELECT NOW()', (err) => {
   if (err) {
-    console.warn('[Web App 1] PostgreSQL connection warning:', err.message);
+    console.warn('[Web App 2] PostgreSQL connection warning:', err.message);
   } else {
-    console.log('[Web App 1] Connected to PostgreSQL (sso_db) successfully');
+    console.log('[Web App 2] Connected to PostgreSQL (sso_db) successfully');
   }
 });
 
-// ข้อมูลสำรองกรณีเชื่อมต่อฐานข้อมูลไม่ได้ชั่วคราว
-const fallbackLabRooms = [
-  { id: 'LAB-101', name: 'ห้องปฏิบัติการ AI & Data Science', location: 'อาคารเรียนรวม 4 ชั้น 2', capacity: 35, available: 18 },
-  { id: 'LAB-202', name: 'ห้องปฏิบัติการ Network & Cybersecurity', location: 'อาคารวิศวกรรมคอมพิวเตอร์ ชั้น 3', capacity: 30, available: 12 },
-  { id: 'LAB-303', name: 'ห้องปฏิบัติการ Software & Cloud Computing', location: 'อาคารวิจัยและนวัตกรรม ชั้น 1', capacity: 40, available: 25 }
+// ข้อมูลจำลองสำรองกรณีฐานข้อมูลขัดข้องชั่วคราว
+const fallbackEquipments = [
+  { id: 'EQ-101', name: 'ชุดบอร์ด Raspberry Pi 4 (4GB) + เซนเซอร์ IoT Kit', category: 'Hardware / IoT', total: 10, available: 6 },
+  { id: 'EQ-202', name: 'สาย Cisco Console Cable (USB to RJ45)', category: 'Networking', total: 15, available: 11 },
+  { id: 'EQ-303', name: 'แว่น VR Headset Meta Quest 3 สำหรับพัฒนา 3D', category: 'VR / AR', total: 4, available: 2 },
+  { id: 'EQ-404', name: 'Google Coral Edge TPU (USB Accelerator) สำหรับ AI', category: 'AI Accelerators', total: 8, available: 5 }
 ];
 
-async function getLabRooms() {
+async function getEquipments() {
   try {
-    const res = await pool.query('SELECT id, name, location, capacity, available FROM lab_rooms ORDER BY id ASC');
+    const res = await pool.query('SELECT id, name, category, total, available FROM equipments ORDER BY id ASC');
     if (res.rows.length > 0) return res.rows;
   } catch (err) {
-    console.error('[Web App 1] Error querying lab_rooms:', err.message);
+    console.error('[Web App 2] Error querying equipments:', err.message);
   }
-  return fallbackLabRooms;
+  return fallbackEquipments;
 }
 
-async function getUserReservations(studentId) {
+async function getUserLoans(studentId) {
   try {
     const res = await pool.query(
-      `SELECT id, room_id AS "room", room_name AS "roomName", student_id AS "studentId", 
-              TO_CHAR(date, 'YYYY-MM-DD') AS date, slot, seat 
-       FROM lab_reservations 
-       WHERE student_id = $1 
+      `SELECT id, equip_id AS "equipId", equip_name AS "equipName", student_id AS "studentId", 
+              TO_CHAR(borrow_date, 'YYYY-MM-DD') AS "borrowDate", 
+              TO_CHAR(return_date, 'YYYY-MM-DD') AS "returnDate", 
+              purpose, status 
+       FROM equipment_loans 
+       WHERE student_id = $1 AND status = 'BORROWED'
        ORDER BY created_at DESC`,
       [studentId]
     );
     return res.rows;
   } catch (err) {
-    console.error('[Web App 1] Error querying reservations:', err.message);
+    console.error('[Web App 2] Error querying loans:', err.message);
     return [];
   }
 }
@@ -68,16 +71,16 @@ app.use(cookieParser());
 function ssoAuthMiddleware(req, res, next) {
   const token = req.cookies ? req.cookies.sso_token : null;
   const host = req.headers.host || '';
-  const isDirectPort = host.includes(':4001');
+  const isDirectPort = host.includes(':4002');
   
-  // กำหนด Return URL ให้ถูกต้องตามการเข้าถึง (ผ่าน Nginx หรือเข้าตรงพอร์ต 4001)
-  const currentReturnUrl = isDirectPort ? `http://${host}/` : '/lab/';
+  // กำหนด Return URL ให้ถูกต้องตามการเข้าถึง (ผ่าน Nginx หรือเข้าตรงพอร์ต 4002)
+  const currentReturnUrl = isDirectPort ? `http://${host}/` : '/equipment/';
   const loginUrl = isDirectPort 
     ? `${AUTH_URL}/login?redirect_url=${encodeURIComponent(currentReturnUrl)}&error=not_logged_in`
     : `/auth/login?redirect_url=${encodeURIComponent(currentReturnUrl)}&error=not_logged_in`;
 
   if (!token) {
-    console.log(`[Web App 1 (Port ${PORT})] No SSO token found. Redirecting to Central Auth...`);
+    console.log(`[Web App 2 (Port ${PORT})] No SSO token found. Redirecting to Central Auth...`);
     return res.redirect(loginUrl);
   }
 
@@ -87,24 +90,24 @@ function ssoAuthMiddleware(req, res, next) {
     req.isDirectPort = isDirectPort;
     next();
   } catch (err) {
-    console.warn(`[Web App 1 (Port ${PORT})] Invalid or expired SSO token:`, err.message);
+    console.warn(`[Web App 2 (Port ${PORT})] Invalid or expired SSO token:`, err.message);
     res.clearCookie('sso_token', { path: '/' });
     return res.redirect(loginUrl);
   }
 }
 
 // Route สำหรับออกจากระบบ (Logout) - ทำงานได้ทั้งกรณีเข้าตรงและผ่าน Proxy
-app.get(['/logout', '/auth/logout', '/lab/logout'], (req, res) => {
+app.get(['/logout', '/auth/logout', '/equipment/logout'], (req, res) => {
   res.clearCookie('sso_token', { path: '/' });
   const host = req.headers.host || '';
-  const isDirectPort = host.includes(':4001');
-  const returnTarget = isDirectPort ? 'http://localhost:4001/' : '/lab/';
+  const isDirectPort = host.includes(':4002');
+  const returnTarget = isDirectPort ? 'http://localhost:4002/' : '/equipment/';
   const loginUrl = isDirectPort ? 'http://localhost:3000/login' : '/auth/login';
-  console.log(`[Web App 1 (Port ${PORT})] User logged out successfully`);
+  console.log(`[Web App 2 (Port ${PORT})] User logged out successfully`);
   return res.redirect(`${loginUrl}?logged_out=1&redirect_url=${encodeURIComponent(returnTarget)}`);
 });
 
-// ทุก Route ใน Web App 1 จะต้องผ่านการตรวจ SSO Token เสมอ
+// ทุก Route ใน Web App 2 จะต้องผ่านการตรวจ SSO Token เสมอ
 app.use(ssoAuthMiddleware);
 
 /**
@@ -113,25 +116,25 @@ app.use(ssoAuthMiddleware);
 function renderNavbar(user, isDirectPort = false) {
   const page1Link = isDirectPort ? 'http://localhost:4001/' : '/lab/';
   const page2Link = isDirectPort ? 'http://localhost:4002/' : '/equipment/';
-  const logoutUrl = isDirectPort ? '/logout' : '/auth/logout?redirect_url=/lab/';
+  const logoutUrl = isDirectPort ? '/logout' : '/auth/logout?redirect_url=/equipment/';
   const slidesLink = isDirectPort ? 'http://localhost/presentation' : '/presentation';
 
   return `
   <header class="navbar">
     <div class="brand">
-      <div class="brand-icon">🖥️</div>
+      <div class="brand-icon">📦</div>
       <div class="brand-text">
-        <h2>ระบบจองห้องปฏิบัติการคอมพิวเตอร์ (Web App 1)</h2>
-        <span>KMITL Computer Engineering • Folder: <code>web-app-1</code> • Port: <code>${PORT}</code></span>
+        <h2>ระบบยืม-คืนอุปกรณ์ห้องปฏิบัติการ (Web App 2)</h2>
+        <span>KMITL Computer Engineering • Folder: <code>web-app-2</code> • Port: <code>${PORT}</code></span>
       </div>
     </div>
 
     <!-- เมนูเชื่อมโยงระหว่าง 2 Web Apps แยกพอร์ต -->
     <nav class="nav-links">
-      <a href="${page1Link}" class="nav-item active">
+      <a href="${page1Link}" class="nav-item">
         🖥️ Web App 1: จองห้องแล็บ (:4001)
       </a>
-      <a href="${page2Link}" class="nav-item">
+      <a href="${page2Link}" class="nav-item active">
         📦 Web App 2: ยืมอุปกรณ์ (:4002)
       </a>
       <a href="${slidesLink}" target="_blank" class="nav-item">
@@ -154,11 +157,11 @@ function renderNavbar(user, isDirectPort = false) {
 
 const sharedStyles = `
   :root {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
+    --primary: #0284c7;
+    --primary-hover: #0369a1;
     --accent: #f97316;
-    --bg: #0b1329;
-    --card-bg: rgba(23, 37, 84, 0.45);
+    --bg: #070d19;
+    --card-bg: rgba(15, 23, 42, 0.7);
     --card-border: rgba(255, 255, 255, 0.1);
     --text: #f8fafc;
     --muted: #94a3b8;
@@ -173,14 +176,14 @@ const sharedStyles = `
   }
 
   body {
-    background: radial-gradient(circle at 10% 10%, #1e1b4b 0%, #0b1329 70%, #020617 100%);
+    background: radial-gradient(circle at 80% 20%, #0f2b48 0%, #070d19 70%, #020617 100%);
     color: var(--text);
     min-height: 100vh;
     padding-bottom: 40px;
   }
 
   .navbar {
-    background: rgba(15, 23, 42, 0.85);
+    background: rgba(15, 23, 42, 0.9);
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--card-border);
     padding: 14px 32px;
@@ -202,7 +205,7 @@ const sharedStyles = `
   .brand-icon {
     width: 40px;
     height: 40px;
-    background: linear-gradient(135deg, #2563eb, #38bdf8);
+    background: linear-gradient(135deg, #0284c7, #38bdf8);
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -252,9 +255,9 @@ const sharedStyles = `
   }
 
   .nav-item.active {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, #0284c7, #0369a1);
     color: #fff;
-    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.3);
+    box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3);
   }
 
   .user-info {
@@ -277,7 +280,7 @@ const sharedStyles = `
   .user-avatar {
     width: 26px;
     height: 26px;
-    background: #f97316;
+    background: #0284c7;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -310,7 +313,7 @@ const sharedStyles = `
   }
 
   .hero-banner {
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%);
+    background: linear-gradient(135deg, rgba(2, 132, 199, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%);
     border: 1px solid rgba(56, 189, 248, 0.25);
     border-radius: 16px;
     padding: 22px 28px;
@@ -337,7 +340,7 @@ const sharedStyles = `
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(37, 99, 235, 0.25);
+    background: rgba(2, 132, 199, 0.25);
     border: 1px solid rgba(56, 189, 248, 0.4);
     color: #7dd3fc;
     padding: 4px 10px;
@@ -460,7 +463,7 @@ const sharedStyles = `
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, #0284c7, #0369a1);
     color: white;
     border: none;
     padding: 12px;
@@ -473,7 +476,7 @@ const sharedStyles = `
   }
 
   .btn-primary:hover {
-    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 4px 15px rgba(2, 132, 199, 0.4);
     transform: translateY(-1px);
   }
 
@@ -527,21 +530,21 @@ const sharedStyles = `
 `;
 
 // -------------------------------------------------------------
-// Route หน้าที่ 1: ระบบจองห้องแล็บคอมพิวเตอร์ (Web App 1)
+// Route หน้าที่ 2: ระบบยืม-คืนอุปกรณ์ห้องแล็บ (Root route ของ Web App 2)
 // -------------------------------------------------------------
-app.get(['/', '/lab'], async (req, res) => {
+app.get(['/', '/equipment'], async (req, res) => {
   const user = req.user;
-  const labRooms = await getLabRooms();
-  const userReservations = await getUserReservations(user.username);
+  const equipments = await getEquipments();
+  const userLoans = await getUserLoans(user.username);
   const isDirectPort = req.isDirectPort;
-  const actionPrefix = isDirectPort ? '' : '/lab';
+  const actionPrefix = isDirectPort ? '' : '/equipment';
 
   res.send(`<!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบจองห้องแล็บคอมพิวเตอร์ (Web App 1 - Port ${PORT})</title>
+  <title>ระบบยืม-คืนอุปกรณ์ห้องปฏิบัติการ (Web App 2 - Port ${PORT})</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -553,14 +556,14 @@ app.get(['/', '/lab'], async (req, res) => {
   <main class="main-container">
     <div class="hero-banner">
       <div class="hero-title">
-        <h1>🖥️ ระบบจองห้องปฏิบัติการคอมพิวเตอร์</h1>
-        <p>รันแยกอิสระในโฟลเดอร์ <strong>web-app-1/</strong> บนพอร์ต <strong>${PORT}</strong> ด้วย Stateless SSO JWT Verification</p>
+        <h1>📦 ระบบยืม-คืนอุปกรณ์ฮาร์ดแวร์ & IoT ห้องปฏิบัติการ</h1>
+        <p>รันแยกอิสระในโฟลเดอร์ <strong>web-app-2/</strong> บนพอร์ต <strong>${PORT}</strong> ด้วย Stateless SSO JWT Verification</p>
         <div class="badge-meta">
-          <span>🚀 Service: Web App 1</span>
+          <span>🚀 Service: Web App 2</span>
           <span>•</span>
           <span>⚡ Port: ${PORT}</span>
           <span>•</span>
-          <span>📁 Folder: web-app-1</span>
+          <span>📁 Folder: web-app-2</span>
           <span>•</span>
           <span>🐘 Database: PostgreSQL (:5432)</span>
         </div>
@@ -575,16 +578,18 @@ app.get(['/', '/lab'], async (req, res) => {
       <div>
         <div class="card">
           <div class="card-header">
-            <h3>ห้องปฏิบัติการที่เปิดให้บริการ</h3>
-            <span style="font-size: 12px; color: var(--muted);">ประจำภาคการศึกษา</span>
+            <h3>รายการอุปกรณ์ที่เปิดให้ยืม</h3>
+            <span style="font-size: 12px; color: var(--muted);">สำหรับทำโครงงานและการเรียน</span>
           </div>
 
-          ${labRooms.map(room => `
+          ${equipments.map(item => `
             <div class="item-card">
               <div class="item-info">
-                <h4>${room.id}: ${room.name}</h4>
-                <p>📍 ${room.location}</p>
-                <p style="margin-top: 4px; color: #38bdf8;">ความจุทั้งหมด ${room.capacity} เครื่อง (ว่าง ${room.available} เครื่อง)</p>
+                <h4>${item.id}: ${item.name}</h4>
+                <p>หมวดหมู่: <span style="color: #38bdf8;">${item.category}</span></p>
+                <p style="margin-top: 4px; color: ${item.available > 0 ? '#6ee7b7' : '#f87171'};">
+                  สถานะ: ${item.available > 0 ? `พร้อมให้ยืม (${item.available}/${item.total} รายการ)` : 'ของหมดชั่วคราว'}
+                </p>
               </div>
             </div>
           `).join('')}
@@ -592,39 +597,39 @@ app.get(['/', '/lab'], async (req, res) => {
 
         <div class="card">
           <div class="card-header">
-            <h3>ประวัติการจองเครื่องของคุณ (${user.username})</h3>
+            <h3>รายการอุปกรณ์ที่คุณกำลังยืม (${user.username})</h3>
           </div>
 
-          ${userReservations.length === 0 ? `
+          ${userLoans.length === 0 ? `
             <p style="color: var(--muted); font-size: 13px; text-align: center; padding: 20px;">
-              ยังไม่มีประวัติการจองในขณะนี้
+              ไม่มีประวัติการยืมอุปกรณ์ที่ค้างส่งในขณะนี้
             </p>
           ` : `
             <table class="table">
               <thead>
                 <tr>
-                  <th>รหัส</th>
-                  <th>ห้องแล็บ</th>
-                  <th>วันที่</th>
-                  <th>ช่วงเวลา</th>
-                  <th>เครื่อง</th>
+                  <th>รหัสยืม</th>
+                  <th>อุปกรณ์</th>
+                  <th>วันที่ยืม</th>
+                  <th>กำหนดคืน</th>
+                  <th>เหตุผล</th>
                   <th>สถานะ</th>
                   <th>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
-                ${userReservations.map(resv => `
+                ${userLoans.map(loan => `
                   <tr>
-                    <td><code>${resv.id}</code></td>
-                    <td>${resv.roomName || resv.room}</td>
-                    <td>${resv.date}</td>
-                    <td>${resv.slot}</td>
-                    <td><strong>${resv.seat}</strong></td>
-                    <td><span class="badge-status">จองสำเร็จ</span></td>
+                    <td><code>${loan.id}</code></td>
+                    <td><strong>${loan.equipName}</strong></td>
+                    <td>${loan.borrowDate}</td>
+                    <td><span style="color: #fb923c;">${loan.returnDate}</span></td>
+                    <td>${loan.purpose}</td>
+                    <td><span class="badge-status">กำลังยืม</span></td>
                     <td>
-                      <form action="${actionPrefix}/cancel" method="POST" style="display:inline;">
-                        <input type="hidden" name="bookingId" value="${resv.id}">
-                        <button type="submit" class="btn-cancel" onclick="return confirm('ยืนยันการยกเลิกการจองนี้?')">ยกเลิก</button>
+                      <form action="${actionPrefix}/return" method="POST" style="display:inline;">
+                        <input type="hidden" name="loanId" value="${loan.id}">
+                        <button type="submit" class="btn-cancel" onclick="return confirm('ยืนยันการคืนอุปกรณ์นี้?')">ส่งคืนอุปกรณ์</button>
                       </form>
                     </td>
                   </tr>
@@ -638,48 +643,46 @@ app.get(['/', '/lab'], async (req, res) => {
       <div>
         <div class="card">
           <div class="card-header">
-            <h3>แบบฟอร์มจองที่นั่งปฏิบัติการ</h3>
+            <h3>แบบฟอร์มขอยืมอุปกรณ์</h3>
           </div>
 
-          <form action="${actionPrefix}/book" method="POST" class="form-styled">
+          <form action="${actionPrefix}/borrow" method="POST" class="form-styled">
             <div class="form-group">
-              <label for="roomSelect">เลือกห้องปฏิบัติการ</label>
-              <select name="roomId" id="roomSelect" required>
-                ${labRooms.map(r => `
-                  <option value="${r.id}">${r.id} - ${r.name}</option>
+              <label for="equipSelect">เลือกอุปกรณ์ที่ต้องการยืม</label>
+              <select name="equipId" id="equipSelect" required>
+                ${equipments.map(e => `
+                  <option value="${e.id}" ${e.available <= 0 ? 'disabled' : ''}>
+                    ${e.id} - ${e.name} (คงเหลือ ${e.available})
+                  </option>
                 `).join('')}
               </select>
             </div>
 
             <div class="form-group">
-              <label for="bookDate">วันที่ต้องการใช้งาน</label>
-              <input type="date" id="bookDate" name="bookDate" value="2026-09-08" required>
+              <label for="borrowDate">วันที่เริ่มต้นยืม</label>
+              <input type="date" id="borrowDate" name="borrowDate" value="2026-09-08" required>
             </div>
 
             <div class="form-group">
-              <label for="slotSelect">ช่วงเวลา</label>
-              <select name="slot" id="slotSelect" required>
-                <option value="09:00 - 12:00">ช่วงเช้า (09:00 - 12:00)</option>
-                <option value="13:00 - 16:00" selected>ช่วงบ่าย (13:00 - 16:00)</option>
-                <option value="16:30 - 19:30">ช่วงเย็น (16:30 - 19:30)</option>
-              </select>
+              <label for="returnDate">กำหนดวันส่งคืน</label>
+              <input type="date" id="returnDate" name="returnDate" value="2026-09-15" required>
             </div>
 
             <div class="form-group">
-              <label for="seatNumber">หมายเลขเครื่องคอมพิวเตอร์</label>
-              <input type="text" id="seatNumber" name="seatNumber" placeholder="เช่น PC-15" value="PC-12" required>
+              <label for="purpose">วัตถุประสงค์ / ชื่อวิชาโครงงาน</label>
+              <input type="text" id="purpose" name="purpose" placeholder="เช่น ทำโครงงานวิชา Network Security" required>
             </div>
 
-            <button type="submit" class="btn-primary">ยืนยันการจองที่นั่ง</button>
+            <button type="submit" class="btn-primary">ยืนยันการขอยืมอุปกรณ์</button>
           </form>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <h3>SSO JWT Token Inspector (Web App 1)</h3>
+            <h3>SSO Token Verification (Web App 2)</h3>
           </div>
           <p style="font-size: 12px; color: var(--muted); line-height: 1.5;">
-            แอปตัวที่ 1 ตรวจสอบลายเซ็นด้วย Shared Secret บนพอร์ต <strong>${PORT}</strong> โดยอ่านคุกกี้ <code>sso_token</code> จากโดเมนเดียวกัน:
+            แอปตัวที่ 2 ตรวจสอบลายเซ็นด้วย Shared Secret บนพอร์ต <strong>${PORT}</strong> โดยอ่านคุกกี้ <code>sso_token</code> จากโดเมนเดียวกัน:
           </p>
           <div class="token-box">
 <strong>Decoded JWT Payload:</strong><br>
@@ -693,50 +696,79 @@ ${JSON.stringify(user, null, 2)}
 </html>`);
 });
 
-// บันทึกการจองลง PostgreSQL
-app.post(['/book', '/lab/book'], async (req, res) => {
-  const { roomId, bookDate, slot, seatNumber } = req.body;
+// บันทึกการยืมอุปกรณ์ใน PostgreSQL (SQL Transaction)
+app.post(['/borrow', '/equipment/borrow'], async (req, res) => {
+  const { equipId, borrowDate, returnDate, purpose } = req.body;
   const user = req.user;
-  const newId = 'RES-' + Math.floor(100 + Math.random() * 900);
+  const newId = 'LOAN-' + Math.floor(100 + Math.random() * 900);
 
+  const client = await pool.connect();
   try {
-    const roomRes = await pool.query('SELECT name FROM lab_rooms WHERE id = $1', [roomId]);
-    const roomName = roomRes.rows[0]?.name || 'ห้องปฏิบัติการคอมพิวเตอร์';
-
-    await pool.query(
-      `INSERT INTO lab_reservations (id, room_id, room_name, student_id, date, slot, seat)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [newId, roomId, roomName, user.username, bookDate || '2026-09-08', slot, seatNumber || 'PC-Auto']
+    await client.query('BEGIN');
+    const equipRes = await client.query(
+      'SELECT name, available FROM equipments WHERE id = $1 FOR UPDATE',
+      [equipId]
     );
-    console.log(`[Web App 1 (Port ${PORT})] Reservation created in PostgreSQL: ${newId} by ${user.username}`);
+
+    if (equipRes.rows.length > 0 && equipRes.rows[0].available > 0) {
+      const equip = equipRes.rows[0];
+      await client.query('UPDATE equipments SET available = available - 1 WHERE id = $1', [equipId]);
+      await client.query(
+        `INSERT INTO equipment_loans (id, equip_id, equip_name, student_id, borrow_date, return_date, purpose, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'BORROWED')`,
+        [newId, equipId, equip.name, user.username, borrowDate || '2026-09-08', returnDate || '2026-09-15', purpose || 'การศึกษาและทดลองในรายวิชา']
+      );
+      await client.query('COMMIT');
+      console.log(`[Web App 2 (Port ${PORT})] Equipment loan created in PostgreSQL: ${newId} for ${user.username}`);
+    } else {
+      await client.query('ROLLBACK');
+      console.warn(`[Web App 2 (Port ${PORT})] Equipment ${equipId} is out of stock.`);
+    }
   } catch (err) {
-    console.error(`[Web App 1 (Port ${PORT})] Failed to insert reservation into PostgreSQL:`, err.message);
+    await client.query('ROLLBACK');
+    console.error(`[Web App 2 (Port ${PORT})] Equipment loan transaction error:`, err.message);
+  } finally {
+    client.release();
   }
-  
-  const returnPath = req.isDirectPort ? '/' : '/lab/';
+
+  const returnPath = req.isDirectPort ? '/' : '/equipment/';
   res.redirect(returnPath);
 });
 
-// ยกเลิกการจองใน PostgreSQL
-app.post(['/cancel', '/lab/cancel'], async (req, res) => {
-  const { bookingId } = req.body;
+// ส่งคืนอุปกรณ์ใน PostgreSQL (SQL Transaction)
+app.post(['/return', '/equipment/return'], async (req, res) => {
+  const { loanId } = req.body;
   const user = req.user;
 
+  const client = await pool.connect();
   try {
-    await pool.query(
-      'DELETE FROM lab_reservations WHERE id = $1 AND student_id = $2',
-      [bookingId, user.username]
+    await client.query('BEGIN');
+    const loanRes = await client.query(
+      'SELECT equip_id FROM equipment_loans WHERE id = $1 AND student_id = $2 AND status = $3 FOR UPDATE',
+      [loanId, user.username, 'BORROWED']
     );
-    console.log(`[Web App 1 (Port ${PORT})] Reservation cancelled in PostgreSQL: ${bookingId} by ${user.username}`);
+
+    if (loanRes.rows.length > 0) {
+      const equipId = loanRes.rows[0].equip_id;
+      await client.query('UPDATE equipments SET available = available + 1 WHERE id = $1', [equipId]);
+      await client.query('DELETE FROM equipment_loans WHERE id = $1', [loanId]);
+      await client.query('COMMIT');
+      console.log(`[Web App 2 (Port ${PORT})] Equipment loan returned in PostgreSQL: ${loanId} by ${user.username}`);
+    } else {
+      await client.query('ROLLBACK');
+    }
   } catch (err) {
-    console.error(`[Web App 1 (Port ${PORT})] Failed to cancel reservation in PostgreSQL:`, err.message);
+    await client.query('ROLLBACK');
+    console.error(`[Web App 2 (Port ${PORT})] Return transaction error:`, err.message);
+  } finally {
+    client.release();
   }
-  
-  const returnPath = req.isDirectPort ? '/' : '/lab/';
+
+  const returnPath = req.isDirectPort ? '/' : '/equipment/';
   res.redirect(returnPath);
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Web App 1] Lab Booking Service running on port ${PORT}`);
-  console.log(`[Web App 1] PostgreSQL DB: ${DATABASE_URL}`);
+  console.log(`[Web App 2] Equipment Loan Service running on port ${PORT}`);
+  console.log(`[Web App 2] PostgreSQL DB: ${DATABASE_URL}`);
 });
