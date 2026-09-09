@@ -117,7 +117,7 @@ function renderNavbar(user, isDirectPort = false) {
   const page1Link = isDirectPort ? 'http://localhost:4001/' : '/lab/';
   const page2Link = isDirectPort ? 'http://localhost:4002/' : '/equipment/';
   const logoutUrl = isDirectPort ? '/logout' : '/auth/logout?redirect_url=/equipment/';
-  const slidesLink = isDirectPort ? 'http://localhost/presentation' : '/presentation';
+  const slidesLink = 'https://www.canva.com/design/DAHUnGy3I7A/YDtBe5kUc4WF2K4XeFZheQ/edit';
 
   return `
   <header class="navbar">

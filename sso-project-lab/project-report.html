@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>รายงานและเอกสารอธิบายระบบ Single Sign-On (SSO) ด้วย FreeRADIUS และ Central Auth</title>
+  <!-- Offline-ready typography -->
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 15mm 18mm 15mm;
+      @bottom-right {
+        content: counter(page);
+      }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Leelawadee UI', 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #1e293b;
+      background-color: #ffffff;
+    }
+
+    h1, h2, h3, h4, .font-heading {
+      font-family: 'Leelawadee UI', 'Segoe UI', Tahoma, sans-serif;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    /* Cover / Header Section */
+    .header-box {
+      background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+      color: #ffffff;
+      padding: 26px 28px;
+      border-radius: 12px;
+      margin-bottom: 22px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      page-break-inside: avoid;
+    }
+
+    .badge-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: rgba(255, 255, 255, 0.16);
+      color: #f8fafc;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .badge-primary {
+      background: #f97316;
+      color: #ffffff;
+      border: none;
+    }
+
+    .header-box h1 {
+      font-size: 23px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+
+    .header-box p.subtitle {
+      font-size: 14px;
+      color: #cbd5e1;
+      font-weight: 400;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 11.5px;
+    }
+
+    .meta-item strong {
+      display: block;
+      color: #93c5fd;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Section Styling */
+    h2 {
+      font-size: 17px;
+      font-weight: 600;
+      border-left: 4px solid #2563eb;
+      padding-left: 10px;
+      margin: 22px 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    h3 {
+      font-size: 14.5px;
+      font-weight: 600;
+      margin: 14px 0 8px 0;
+      color: #1e3a8a;
+    }
+
+    p {
+      margin-bottom: 10px;
+      text-align: justify;
+    }
+
+    ul, ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    /* Cards & Containers */
+    .card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .card-accent {
+      border-left: 4px solid #f97316;
+      background: #fffaf5;
+    }
+
+    .card-blue {
+      border-left: 4px solid #2563eb;
+      background: #f0f7ff;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 16px 0;
+      font-size: 12.5px;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background-color: #0f172a;
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    tr:nth-child(even) td {
+      background-color: #f8fafc;
+    }
+
+    /* Code Blocks */
+    code {
+      font-family: 'Fira Code', Consolas, monospace;
+      font-size: 11.5px;
+      background: #f1f5f9;
+      color: #be185d;
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+
+    pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-family: 'Fira Code', Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 10px 0 14px 0;
+      page-break-inside: avoid;
+      border: 1px solid #1e293b;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border: none;
+      font-size: 11px;
+    }
+
+    /* Workflow Steps */
+    .step-list {
+      counter-reset: step-counter;
+      list-style: none;
+      margin: 10px 0;
+      padding: 0;
+    }
+
+    .step-item {
+      position: relative;
+      padding-left: 36px;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+
+    .step-item::before {
+      counter-increment: step-counter;
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: bold;
+      font-size: 12px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-title {
+      font-weight: 600;
+      color: #0f172a;
+      margin-bottom: 2px;
+      font-size: 13.5px;
+    }
+
+    .diagram-box {
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px;
+      color: #38bdf8;
+      font-family: 'Fira Code', Consolas, monospace;
+      font-size: 10.5px;
+      line-height: 1.35;
+      white-space: pre;
+      margin: 12px 0 16px 0;
+      page-break-inside: avoid;
+    }
+
+    .page-break {
+      page-break-after: always;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 11px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= PAGE 1 ================= -->
+  <div class="header-box">
+    <div class="badge-bar">
+      <span class="badge badge-primary">Docker Architecture</span>
+      <span class="badge">Microservices</span>
+      <span class="badge">FreeRADIUS</span>
+      <span class="badge">Central Authentication Service (CAS)</span>
+      <span class="badge">Stateless JWT</span>
+      <span class="badge">PostgreSQL</span>
+    </div>
+    <h1>รายงานและเอกสารอธิบายระบบ Single Sign-On (SSO)</h1>
+    <p class="subtitle">การพัฒนาระบบยืนยันตัวตนแบบจุดเดียวด้วย FreeRADIUS และ Central Auth บน Docker สำหรับสถาบันการศึกษา</p>
+    
+    <div class="meta-grid">
+      <div class="meta-item">
+        <strong>โปรเจกต์</strong>
+        SSO Project Lab
+      </div>
+      <div class="meta-item">
+        <strong>เทคโนโลยีหลัก</strong>
+        Node.js, RADIUS, Nginx, PG
+      </div>
+      <div class="meta-item">
+        <strong>สถาปัตยกรรม</strong>
+        6 Isolated Containers
+      </div>
+      <div class="meta-item">
+        <strong>เครือข่าย</strong>
+        Bridge (172.16.10.0/24)
+      </div>
+    </div>
+  </div>
+
+  <h2>1. บทนำและที่มาของโครงการ (Problem & Motivation)</h2>
+  <p>
+    ในระบบสารสนเทศของสถาบันการศึกษาหรือองค์กรยุคใหม่ มักประกอบไปด้วยเว็บแอปพลิเคชันที่หลากหลาย เช่น ระบบจองห้องปฏิบัติการคอมพิวเตอร์ ระบบยืม-คืนอุปกรณ์ และระบบสารสนเทศวิชาการ หากออกแบบระบบในรูปแบบดั้งเดิม (Traditional Isolated Architecture) แต่ละเว็บแอปพลิเคชันจะต้องรับผิดชอบการเชื่อมต่อเพื่อยืนยันตัวตนไปยังเซิร์ฟเวอร์หลัก (เช่น RADIUS Server) ด้วยตนเอง ซึ่งก่อให้เกิดปัญหาสำคัญ 3 ประการ:
+  </p>
+
+  <div class="grid-3">
+    <div class="card card-accent">
+      <strong>1. ประสบการณ์ใช้งานแย่</strong>
+      <p style="font-size: 12px; margin-top: 4px; margin-bottom: 0;">ผู้ใช้งานต้องจดจำและกรอกชื่อผู้ใช้/รหัสผ่านซ้ำๆ ทุกครั้งเมื่อเปลี่ยนไปใช้งานแอปพลิเคชันอื่นภายในเครือข่าย</p>
+    </div>
+    <div class="card card-accent">
+      <strong>2. ความเสี่ยงด้านความปลอดภัย</strong>
+      <p style="font-size: 12px; margin-top: 4px; margin-bottom: 0;">รหัสผ่านวิ่งผ่านเว็บแอปพลิเคชันหลายตัว เสี่ยงต่อการถูกดักจับหรือเกิดจุดรั่วไหลจากแอปพลิเคชันที่ไม่ได้มาตรฐาน</p>
+    </div>
+    <div class="card card-accent">
+      <strong>3. ภาระเซิร์ฟเวอร์มหาศาล</strong>
+      <p style="font-size: 12px; margin-top: 49x; margin-bottom: 0;">RADIUS Server ต้องรับภาระการตรวจสอบรหัสผ่านซ้ำซ้อนอย่างต่อเนื่องในทุกๆ หน้าเว็บที่มีการร้องขอ</p>
+    </div>
+  </div>
+
+  <p>
+    <strong>แนวทางการแก้ไข:</strong> โครงการนี้ได้ประยุกต์ใช้แนวคิด <strong>Central Authentication Service (CAS)</strong> และ <strong>Single Sign-On (SSO)</strong> เพื่อสร้างจุดยืนยันตัวตนส่วนกลาง (Identity Provider - IdP) ทำหน้าที่ติดต่อกับ FreeRADIUS เพียงจุดเดียว โดยแยกกระบวนการยืนยันตัวตน (Authentication) ออกจากการควบคุมสิทธิ์และการทำงานของแอปพลิเคชันปลายทาง (Authorization & Business Logic) อย่างเด็ดขาด
+  </p>
+
+  <h2>2. ภาพรวมสถาปัตยกรรมระบบ (System Architecture)</h2>
+  <p>
+    ระบบทั้งหมดถูกบรรจุและควบคุมการทำงานผ่าน <strong>Docker Compose</strong> ประกอบด้วย 6 คอนเทนเนอร์หลักที่สื่อสารกันผ่านเครือข่ายเสมือน <code>kmitl_sso_net</code> (Subnet 172.16.10.0/24):
+  </p>
+
+  <div class="diagram-box">
+                                     [ ผู้ใช้งาน (Client Web Browser) ]
+                                                     │
+                                                     ▼ (HTTP Port 80)
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                       Nginx Reverse Proxy (:80)                                         │
+│                /auth/                          /lab/                            /equipment/            │
+└──────────────────┬───────────────────────────────┬───────────────────────────────────┬─────────────────┘
+                   │                               │                                   │
+                   ▼ (Port 3000)                   ▼ (Port 4001)                       ▼ (Port 4002)
+       ┌────────────────────────┐      ┌────────────────────────┐          ┌────────────────────────┐
+       │  Central Auth Service  │      │  Web App 1: จองห้องแล็บ │          │ Web App 2: ยืมอุปกรณ์   │
+       │   - SSO Login Portal   │      │  - Stateless Verify    │          │  - Stateless Verify    │
+       │   - Issue Signed JWT   │      │  - Booking Management  │          │  - SQL Transaction     │
+       └───────────┬────────────┘      └───────────┬────────────┘          └───────────┬────────────┘
+                   │ UDP 1812                      │                                   │
+                   ▼                               └─────────────────┬─────────────────┘
+       ┌────────────────────────┐                                    │ PostgreSQL Port 5432
+       │   FreeRADIUS Server    │                                    ▼
+       │  - RFC 2865 IdP        │                      ┌───────────────────────────┐
+       │  - Authorize Database  │                      │    PostgreSQL (sso_db)    │
+       │  - Timeout Protected   │                      │ - login_audit_logs        │
+       └────────────────────────┘                      │ - lab_rooms, lab_reserves │
+                                                       │ - equipments, equip_loans │
+                                                       └───────────────────────────┘
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- ================= PAGE 2 ================= -->
+  <h2>3. รายละเอียดและบทบาทของแต่ละคอมโพเนนต์ (Component Details)</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 22%;">คอมโพเนนต์</th>
+        <th style="width: 18%;">พอร์ต / โปรโตคอล</th>
+        <th>บทบาทและหน้าที่สำคัญ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>FreeRADIUS Server</strong><br><code>sso_radius</code></td>
+        <td>UDP: 1812<br>(Internal/Host)</td>
+        <td>
+          • เซิร์ฟเวอร์ตรวจสอบความถูกต้องของบัญชีผู้ใช้ (Identity Provider)<br>
+          • ตรวจสอบข้อมูลรหัสผ่านตามมาตรฐาน RADIUS (RFC 2865)<br>
+          • รองรับการแก้ไข BlastRADIUS (CVE-2024-3596) และจัดการสิทธิ์ไฟล์ <code>chmod 640</code>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Central Auth Service</strong><br><code>sso_central_auth</code></td>
+        <td>TCP: 3000<br>(Node.js/Express)</td>
+        <td>
+          • ทำหน้าที่เป็น SSO Login Portal กลางสำหรับทุกระบบ<br>
+          • ส่งแพ็กเก็ต <code>Access-Request</code> ไปถาม FreeRADIUS ผ่าน UDP พร้อม <strong>Timeout ดักจับ 3 วินาที</strong><br>
+          • ออกบัตรผ่าน <strong>JSON Web Token (JWT)</strong> พร้อมตั้งค่า <strong>HTTPOnly Cookie</strong><br>
+          • บันทึกบันทึกประวัติการยืนยันตัวตน (Login Audit Trail) ลง PostgreSQL
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Web App 1</strong><br><code>sso_web_app_1</code></td>
+        <td>TCP: 4001<br>(Node.js/Express)</td>
+        <td>
+          • <strong>ระบบจองห้องปฏิบัติการคอมพิวเตอร์</strong> (เช่น AI Lab, Network Lab)<br>
+          • ใช้ Middleware ตรวจสอบสิทธิ์แบบ <strong>Stateless JWT Verification</strong><br>
+          • หากไม่มีคุกกี้ Token จะส่งผู้ใช้ไปยังหน้า Login พร้อมพารามิเตอร์ <code>redirect_url</code>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Web App 2</strong><br><code>sso_web_app_2</code></td>
+        <td>TCP: 4002<br>(Node.js/Express)</td>
+        <td>
+          • <strong>ระบบยืม-คืนอุปกรณ์ห้องแล็บ</strong> (เช่น บอร์ด Raspberry Pi, แว่น VR, สาย Console)<br>
+          • ทำงานบนพอร์ตแยกและโฟลเดอร์แยก แต่แชร์เซสชัน SSO ผ่านคุกกี้ตัวเดียวกันได้ทันที<br>
+          • ใช้ <strong>SQL Transaction</strong> (BEGIN...COMMIT) ป้องกัน Race Condition ขณะตัดสต็อก
+        </td>
+      </tr>
+      <tr>
+        <td><strong>PostgreSQL DB</strong><br><code>sso_postgres</code></td>
+        <td>TCP: 5432<br>(Postgres Alpine)</td>
+        <td>
+          • ฐานข้อมูลเชิงสัมพันธ์ (Relational Database) จัดเก็บข้อมูลถาวร (Persistent Volume)<br>
+          • เก็บ Audit Logs, ข้อมูลห้องแล็บ, ประวัติการจอง, ข้อมูลอุปกรณ์, และประวัติการยืม-คืน
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Nginx Reverse Proxy</strong><br><code>sso_nginx_proxy</code></td>
+        <td>TCP: 80<br>(Nginx Alpine)</td>
+        <td>
+          • จุดรับคำขอหลัก (Single Entry Point) บน <code>http://localhost</code><br>
+          • ควบคุม Routing: <code>/auth/</code>, <code>/lab/</code>, <code>/equipment/</code>, <code>/presentation</code><br>
+          • ส่งต่อและควบคุมคุกกี้ด้วยคำสั่ง <code>proxy_pass_header Set-Cookie</code>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. ขั้นตอนการทำงานของระบบ Single Sign-On (SSO Workflow)</h2>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 1: ตรวจสอบสิทธิ์ที่แอปปลายทาง (Intercept & Redirect)</div>
+      <p>เมื่อผู้ใช้เปิดเข้า <code>http://localhost/lab/</code> ตัว Web App 1 Middleware จะอ่านคุกกี้ชื่อ <code>sso_token</code> หากไม่พบ จะทำการ Redirect เบราว์เซอร์ไปยังหน้า Login กลางอัตโนมัติ: <code>http://localhost/auth/login?redirect_url=/lab/</code></p>
+    </div>
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 2: ยืนยันตัวตนกับ FreeRADIUS (UDP Access-Request)</div>
+      <p>ผู้ใช้กรอก Username และ Password ที่หน้า Central Auth ตัวเซิร์ฟเวอร์จะเข้ารหัสแพ็กเก็ต RADIUS และยิงผ่าน UDP พอร์ต 1812 ไปยัง FreeRADIUS Server โดยมีกลไก Timeout 3 วินาทีเพื่อป้องกันระบบค้าง</p>
+    </div>
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 3: ตอบรับและสร้างบัตรผ่าน (Issue Signed JWT)</div>
+      <p>เมื่อ FreeRADIUS ตอบกลับเป็น <code>Access-Accept</code> ตัว Central Auth จะบันทึก Audit Log ลง PostgreSQL แล้วสร้าง JSON Web Token (JWT) โดยมี Payload บรรจุข้อมูลผู้ใช้ (studentId, username, role) พร้อมลงลายมือชื่อดิจิทัลด้วย <code>JWT_SECRET</code></p>
+    </div>
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 4: เก็บรักษาใน HTTPOnly Cookie และ Redirect กลับ</div>
+      <p>Central Auth ส่ง Token กลับไปในรูปแบบ <strong>HTTPOnly Cookie</strong> พร้อมตั้งค่า <code>Path: /</code> และ <code>Max-Age: 2 ชั่วโมง</code> จากนั้น Redirect ผู้ใช้กลับไปยัง <code>redirect_url</code> ที่ส่งมาตั้งแต่แรก</p>
+    </div>
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 5: ตรวจสอบสิทธิ์แบบ Stateless (เข้าใช้งานได้ทันที)</div>
+      <p>Web App 1 ได้รับ Token ผ่าน Cookie และทำการ Verify Signature ด้วยกุญแจลับร่วมกัน (Shared Secret) หากถูกต้อง จะอนุญาตให้เข้าใช้งานระบบทันที <strong>โดยไม่ต้องติดต่อไปยัง FreeRADIUS ซ้ำอีก</strong></p>
+    </div>
+    <div class="step-item">
+      <div class="step-title">ขั้นตอนที่ 6: การทำงานของ SSO ข้ามระบบ (Seamless Cross-App Access)</div>
+      <p>เมื่อผู้ใช้คลิกสลับไป <code>http://localhost/equipment/</code> (Web App 2 บนพอร์ต 4002) เบราว์เซอร์จะแนบคุกกี้ตัวเดิมไปด้วย Web App 2 จึงสามารถตรวจสอบและอนุญาตให้ใช้งานได้ทันที <strong>โดยผู้ใช้ไม่ต้องล็อกอินใหม่แม้แต่ครั้งเดียว</strong></p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- ================= PAGE 3 ================= -->
+  <h2>5. เจาะลึกการพัฒนาโค้ดและจุดเด่นทางเทคนิค (Code Deep Dive)</h2>
+
+  <h3>5.1 กลไกป้องกัน UDP Hang ด้วย Timeout 3 วินาที (Central Auth)</h3>
+  <p>โปรโตคอล UDP ไม่มีกระบวนการ Handshake และไม่มีการแจ้งเตือนเมื่อเซิร์ฟเวอร์ปลายทางดับ หากไม่จัดการ Timeout ตัว Node.js Event Loop จะเปิด Socket ค้างไว้จนสูญเสียทรัพยากร ระบบจึงกำหนด Timeout ไว้อย่างรัดกุม:</p>
+
+  <pre><code>// central-auth/server.js
+function authenticateRadius(username, password) {
+  return new Promise((resolve, reject) => {
+    const client = dgram.createSocket('udp4');
+    let responded = false;
+
+    // เข้ารหัส RADIUS Access-Request (RFC 2865)
+    const packet = radius.encode({
+      code: 'Access-Request',
+      secret: RADIUS_SECRET,
+      attributes: [['User-Name', username], ['User-Password', password]]
+    });
+
+    // ป้องกัน UDP Hang ด้วย Timeout 3 วินาที
+    const timeout = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        try { client.close(); } catch (e) {}
+        reject(new Error('RADIUS Server connection timed out (3s). FreeRADIUS might be offline.'));
+      }
+    }, 3000);
+
+    client.on('message', (msg) => {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeout);
+      client.close();
+      const response = radius.decode({ packet: msg, secret: RADIUS_SECRET });
+      if (response.code === 'Access-Accept') resolve(true);
+      else resolve(false);
+    });
+
+    client.send(packet, 0, packet.length, 1812, RADIUS_HOST);
+  });
+}</code></pre>
+
+  <h3>5.2 การตรวจสอบบัตรผ่านแบบ Stateless ในแอปปลายทาง</h3>
+  <p>ใน Web App 1 และ Web App 2 ใช้ Middleware สกัด Cookie และถอดรหัสลายเซ็นโดยตรง ทำให้ระบบมีความเร็วสูงและไม่เกิดคอขวดที่เซิร์ฟเวอร์กลาง:</p>
+
+  <pre><code>// web-app-1/app.js & web-app-2/app.js
+function requireAuth(req, res, next) {
+  const token = req.cookies['sso_token'];
+  if (!token) {
+    const redirectUrl = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`${AUTH_URL}/login?redirect_url=${redirectUrl}`);
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      // โทเคนหมดอายุหรือลายเซ็นไม่ถูกต้อง
+      const redirectUrl = encodeURIComponent(req.originalUrl || '/');
+      return res.redirect(`${AUTH_URL}/login?redirect_url=${redirectUrl}`);
+    }
+    req.user = decoded; // ส่งข้อมูลผู้ใช้ (studentId, username) ไปยัง Route Handler
+    next();
+  });
+}</code></pre>
+
+  <h3>5.3 การจัดการความปลอดภัยระดับสูง (Security Hardening)</h3>
+  <div class="grid-2">
+    <div class="card">
+      <strong style="color: #1e3a8a;">🛡️ การรับมือ BlastRADIUS (CVE-2024-3596)</strong>
+      <p style="font-size: 12px; margin-top: 4px;">
+        ช่องโหว่ระดับสากลในโปรโตคอล MD5 ของ RADIUS ที่ประกาศในปี 2024 ทำให้ FreeRADIUS เวอร์ชันใหม่เข้มงวดเป็นพิเศษ ในระบบนี้ได้ปรับแต่งคอนฟิก <code>clients.conf</code> และสิทธิ์ Subnet ให้ถูกต้อง เพื่อให้ Central Auth สามารถเชื่อมต่อได้อย่างปลอดภัยและเสถียร
+      </p>
+    </div>
+    <div class="card">
+      <strong style="color: #1e3a8a;">🔒 Linux File Permission บน Docker</strong>
+      <p style="font-size: 12px; margin-top: 4px;">
+        FreeRADIUS มีกลไกป้องกันไฟล์คอนฟิกไม่ให้ Globally Writable เพื่อป้องกันการแก้ไขโดยมิชอบ โครงการนี้ได้เขียน Dockerfile ให้ตั้งค่า <code>chmod 640</code> และกำหนดเจ้าของไฟล์เป็น <code>root:freerad</code> ตามมาตรฐานความปลอดภัยระดับ Production
+      </p>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- ================= PAGE 4 ================= -->
+  <h2>6. การออกแบบฐานข้อมูลเชิงสัมพันธ์ (Database Schema)</h2>
+  <p>
+    ระบบเลือกใช้ <strong>PostgreSQL 16</strong> ซึ่งมีโครงสร้างตารางเพื่อรองรับทั้งกระบวนการรักษาความปลอดภัย (Security Audit) และการทำงานของแอปพลิเคชัน:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">ชื่อตาราง (Table)</th>
+        <th style="width: 25%;">คีย์สำคัญ (Key Columns)</th>
+        <th>หน้าที่และคำอธิบาย</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>login_audit_logs</code></td>
+        <td><code>id</code> (PK), <code>username</code>, <code>status</code>, <code>created_at</code></td>
+        <td>บันทึกประวัติการยืนยันตัวตน SSO ทุกครั้ง พร้อมเก็บ IP Address, User Agent และสาเหตุข้อผิดพลาด เพื่อตรวจสอบย้อนหลัง (Audit Trail)</td>
+      </tr>
+      <tr>
+        <td><code>lab_rooms</code></td>
+        <td><code>id</code> (PK), <code>name</code>, <code>capacity</code>, <code>available</code></td>
+        <td>ตารางข้อมูลห้องปฏิบัติการคอมพิวเตอร์ใน Web App 1 เช่น ห้อง AI & Data Science, Network & Cyber Security</td>
+      </tr>
+      <tr>
+        <td><code>lab_reservations</code></td>
+        <td><code>id</code> (PK), <code>room_id</code> (FK), <code>student_id</code>, <code>slot</code></td>
+        <td>ประวัติการจองที่นั่งห้องปฏิบัติการของนักศึกษา พร้อมช่วงเวลาและเลขที่นั่ง</td>
+      </tr>
+      <tr>
+        <td><code>equipments</code></td>
+        <td><code>id</code> (PK), <code>name</code>, <code>category</code>, <code>total</code>, <code>available</code></td>
+        <td>รายการอุปกรณ์ฮาร์ดแวร์ใน Web App 2 พร้อมจำนวนทั้งหมดและจำนวนคงเหลือที่พร้อมให้ยืม</td>
+      </tr>
+      <tr>
+        <td><code>equipment_loans</code></td>
+        <td><code>id</code> (PK), <code>equip_id</code> (FK), <code>student_id</code>, <code>status</code></td>
+        <td>ประวัติการยืม-คืนอุปกรณ์ วันที่ยืม กำหนดคืน วัตถุประสงค์ และสถานะ (BORROWED / RETURNED)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>7. คู่มือการทดสอบและผลลัพธ์ (Testing & Verification Guide)</h2>
+  <div class="card card-blue">
+    <strong style="font-size: 13.5px; color: #1e3a8a;">บัญชีผู้ใช้สำหรับทดสอบในระบบ (Test Accounts):</strong>
+    <ul style="margin: 6px 0 0 20px; font-size: 12.5px;">
+      <li><strong>นักศึกษา 1:</strong> Username: <code>student66000001</code> | Password: <code>password1234</code></li>
+      <li><strong>นักศึกษา 2:</strong> Username: <code>student66000002</code> | Password: <code>password1234</code></li>
+      <li><strong>ผู้ดูแลระบบ:</strong> Username: <code>admin</code> | Password: <code>adminpass</code></li>
+    </ul>
+  </div>
+
+  <h3>ขั้นตอนการทดสอบ Single Sign-On ตามเอกสารปฏิบัติการ:</h3>
+  <ol>
+    <li><strong>เปิดคำสั่งรันระบบ:</strong> ดับเบิลคลิกไฟล์ <code>start.bat</code> หรือรัน <code>docker compose up -d --build</code></li>
+    <li><strong>ทดสอบการ Redirect:</strong> เปิดเบราว์เซอร์ไปที่ <code>http://localhost/lab</code> ระบบจะตรวจไม่พบคุกกี้และเปลี่ยนหน้าไปยัง <code>http://localhost/auth/login?redirect_url=/lab/</code> โดยอัตโนมัติ</li>
+    <li><strong>เข้าสู่ระบบ:</strong> กรอกบัญชี <code>student66000001</code> ระบบจะยืนยันผ่าน FreeRADIUS และส่งกลับมายังหน้าจองห้องแล็บพร้อมแสดงชื่อผู้ใช้</li>
+    <li><strong>ทดสอบ SSO ข้ามพอร์ต:</strong> คลิกเมนู <strong>"Web App 2: ยืมอุปกรณ์"</strong> หรือเข้า <code>http://localhost/equipment/</code> (พอร์ต 4002) จะพบว่า<strong>เข้าใช้งานได้ทันทีโดยไม่ต้องเข้าสู่ระบบซ้ำ</strong></li>
+    <li><strong>ทดสอบ Audit Logs:</strong> สามารถเรียกดูประวัติการเข้าสู่ระบบผ่าน API Endpoint <code>http://localhost/auth/api/audit-logs</code></li>
+  </ol>
+
+  <h2>8. สรุปผลประโยชน์ที่ได้รับ (Conclusion & Benefits)</h2>
+  <ul>
+    <li><strong>ความปลอดภัยสูงสุด (Enhanced Security):</strong> รหัสผ่านจริงถูกเก็บไว้ที่ FreeRADIUS เพียงแห่งเดียว และถูกส่งผ่านเฉพาะช่องทาง Central Auth เท่านั้น โดยคุกกี้ JWT ป้องกันการขโมยด้วย HTTPOnly</li>
+    <li><strong>ลดภาระโครงสร้างพื้นฐาน (High Scalability):</strong> แอปพลิเคชันปลายทางตรวจสิทธิ์แบบ Stateless ในระดับหน่วยความจำ ไม่ต้องทำ I/O หรือคิวรี RADIUS ซ้ำซ้อน</li>
+    <li><strong>ประสบการณ์ผู้ใช้งานที่ไร้รอยต่อ (Seamless UX):</strong> ล็อกอินเพียงครั้งเดียวสามารถเข้าถึงทุกบริการของสถาบันการศึกษาได้อย่างสะดวกรวดเร็ว</li>
+  </ul>
+
+  <div class="footer-note">
+    <span>KMITL Computer Lab SSO Simulation Project</span>
+    <span>Generated as Official Project Documentation (PDF)</span>
+  </div>
+
+</body>
+</html>

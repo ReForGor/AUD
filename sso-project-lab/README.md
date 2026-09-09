@@ -10,7 +10,7 @@
 sso-project-lab/
 │
 ├── docker-compose.yml       # ไฟล์จัดการ Container ทั้งหมด (6 Services อิสระ)
-├── presentation.html        # สไลด์นำเสนอ Interactive Slides (เปิดผ่าน /presentation หรือไฟล์ตรง)
+├── presentation.html        # สไลด์นำเสนอ Interactive Slides (หรือ Canva: https://www.canva.com/design/DAHUnGy3I7A/YDtBe5kUc4WF2K4XeFZheQ/edit)
 ├── start.bat                # สคริปต์คลิกเดียวสำหรับเปิดระบบทั้งหมด
 ├── stop.bat                 # สคริปต์หยุดการทำงาน
 │
